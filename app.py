@@ -1,51 +1,47 @@
-import streamlit as st
+from flask import Flask,render_template,request
 import pickle
-import pandas as pd
-import requests
-#from streamlit import request
-def fetch_poster(movies_id):
-  response = requests.get('https://api.themoviedb.org/3/movie/{}?api_key=da54c5ca169a820853b8c6fbc1ebc3fc&language=en-US'.format(movies_id))
-  data=response.json()
-  return "https://image.tmdb.org/t/p/w500/" +data['poster_path']
-def recommend(movie):
-    movie_index = movies_list[movies_list['title'] == movie].index[0]
-    distances = simillarity[movie_index]
-    movies_list2 = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
-    recommended_movies = []
-    recommended_movies_posters=[]
-    for i in movies_list2:
-        movie_id = movies_list.iloc[i[0]].movie_id
+import numpy as np
 
-        recommended_movies.append(movies_list.iloc[i[0]].title)
-        # fetch poster from api
-        recommended_movies_posters.append(fetch_poster(movie_id))
-    return  recommended_movies,recommended_movies_posters
+popular_df = pickle.load(open('popular.pkl','rb'))
+pt = pickle.load(open('pt.pkl','rb'))
+books = pickle.load(open('books.pkl','rb'))
+similarity_scores = pickle.load(open('similarity_scores.pkl','rb'))
 
-movies_list = pickle.load(open('movies.pkl','rb'))
-simillarity = pickle.load(open('simillarity.pkl','rb'))
-movies_list1=movies_list['title'].values
-st.title('movie recommendation system')
+app = Flask(__name__)
 
+@app.route('/')
+def index():
+    return render_template('index.html',
+                           book_name = list(popular_df['Book-Title'].values),
+                           author=list(popular_df['Book-Author'].values),
+                           image=list(popular_df['Image-URL-M'].values),
+                           votes=list(popular_df['num_ratings'].values),
+                           rating=list(popular_df['avg_rating'].values)
+                           )
 
-selected_movies_name = st.selectbox('ENTER MOVIE FOR WHICH YOU WANT DIFFERENT MOVIE  RECOMMENDATION ?',
-                      (movies_list1))
-if st.button('recommend'):
-    names,posters= recommend(selected_movies_name)
+@app.route('/recommend')
+def recommend_ui():
+    return render_template('recommend.html')
 
-    col1,col2,col3,col4,col5 = st.columns(5)
-    with col1:
-        st.text(names[0])
-        st.image(posters[0])
-    with col2:
-        st.text(names[1])
-        st.image(posters[1])
-    with col3:
-        st.text(names[2])
-        st.image(posters[2])
-    with col4:
-        st.text (names[3])
-        st.image(posters[3])
-    with col5:
-        st.text(names[4])
-        st.image(posters[4])
+@app.route('/recommend_books',methods=['post'])
+def recommend():
+    user_input = request.form.get('user_input')
+    index = np.where(pt.index == user_input)[0][0]
+    similar_items = sorted(list(enumerate(similarity_scores[index])), key=lambda x: x[1], reverse=True)[1:5]
 
+    data = []
+    for i in similar_items:
+        item = []
+        temp_df = books[books['Book-Title'] == pt.index[i[0]]]
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Book-Title'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Book-Author'].values))
+        item.extend(list(temp_df.drop_duplicates('Book-Title')['Image-URL-M'].values))
+
+        data.append(item)
+
+    print(data)
+
+    return render_template('recommend.html',data=data)
+
+if __name__ == '__main__':
+    app.run(debug=True)
